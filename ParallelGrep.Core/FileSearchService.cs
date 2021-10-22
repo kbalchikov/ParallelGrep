@@ -85,7 +85,7 @@ public class FileSearchService
             var buffer = readResult.Buffer;
 
             matches.AddRange(FindLinesInBuffer(ref buffer, ref lineCount));
-            reader.AdvanceTo(buffer.End);
+            reader.AdvanceTo(buffer.Start, buffer.End);
 
             if (readResult.IsCompleted)
                 break;
@@ -98,12 +98,13 @@ public class FileSearchService
     private List<Match> FindLinesInBuffer(ref ReadOnlySequence<byte> buffer, ref int lineCount)
     {
         var matchingLines = new List<Match>();
-        var bufferReader = new SequenceReader<byte>(buffer);
+        var reader = new SequenceReader<byte>(buffer);
 
-        while (bufferReader.TryReadTo(out ReadOnlySpan<byte> line, (byte)'\n', advancePastDelimiter: true))
+        while (reader.TryReadTo(out ReadOnlySpan<byte> line, (byte)'\n'))
         {
             lineCount++;
-            int matchIndex = IsLineMatches(line);
+
+            int matchIndex = ProcessLine(line);
             if (matchIndex >= 0)
             {
                 matchingLines.Add(new Match
@@ -114,18 +115,25 @@ public class FileSearchService
                 });
             }
         }
+        buffer = buffer.Slice(reader.Position);
         return matchingLines;
     }
 
-    private int IsLineMatches(in ReadOnlySpan<byte> source)
+    private int ProcessLine(in ReadOnlySpan<byte> source)
     {
         if (ignoreCase)
         {
-            Span<char> sourceChars = stackalloc char[source.Length];
-            encoding.GetChars(source, sourceChars);
-            ReadOnlySpan<char> readonlySource = sourceChars;
-
-            return readonlySource.IndexOf(pattern.AsSpan(), StringComparison.OrdinalIgnoreCase);
+            if (source.Length <= 1024)
+            {
+                Span<char> sourceChars = stackalloc char[source.Length];
+                encoding.GetChars(source, sourceChars);
+                ReadOnlySpan<char> readonlySource = sourceChars;
+                return readonlySource.IndexOf(pattern.AsSpan(), StringComparison.OrdinalIgnoreCase);
+            }
+            else
+            {
+                return encoding.GetString(source).IndexOf(pattern, StringComparison.OrdinalIgnoreCase);
+            }
         }
         else
         {
