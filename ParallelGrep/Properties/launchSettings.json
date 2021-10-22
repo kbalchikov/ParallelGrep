@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "ParallelGrep": {
+      "commandName": "Project",
+      "commandLineArgs": "-i -c 24 \"Requeststat\" \"D:\\dev\\log_day\\*.txt\""
+    }
+  }
+}
