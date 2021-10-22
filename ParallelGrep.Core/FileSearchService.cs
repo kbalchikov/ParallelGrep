@@ -46,7 +46,8 @@ public class FileSearchService
     public async Task<TimeSpan> SearchAsync(string file)
     {
         var sw = Stopwatch.StartNew();
-        _ = await ProcessFileAsync(file);
+        var fileResult = await ProcessFileAsync(file);
+        await printChannel.Writer.WriteAsync(fileResult);
         sw.Stop();
 
         printChannel.Writer.Complete();
