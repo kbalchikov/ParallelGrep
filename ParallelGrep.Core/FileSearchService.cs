@@ -30,13 +30,17 @@ public class FileSearchService
 
     public async Task<TimeSpan> SearchAsync(string directory, string filePattern)
     {
-        var sem = new SemaphoreSlim(0, concurrencyLevel);
+        var directoryChannel = Channel.CreateUnbounded<string>(new UnboundedChannelOptions { SingleWriter = true, SingleReader = false });
         var sw = Stopwatch.StartNew();
 
-        var tasks = Directory.EnumerateFiles(directory, filePattern, SearchOption.AllDirectories)
-            .Select(filePath => RunSearchAsync(sem, filePath));
+        var tasks = new List<Task>(concurrencyLevel + 1);
 
-        sem.Release(concurrencyLevel);
+        for (int index = 0; index < concurrencyLevel; index++)
+            tasks.Add(RunSearchAsync(directoryChannel));
+
+        tasks.Add(EnumerateDirectoriesAsync(
+            directoryChannel,
+            Directory.EnumerateFiles(directory, filePattern, SearchOption.AllDirectories)));
 
         await Task.WhenAll(tasks);
         printChannel.Writer.Complete();
@@ -54,17 +58,22 @@ public class FileSearchService
         return sw.Elapsed;
     }
 
-    private async Task RunSearchAsync(SemaphoreSlim sem, string filePath)
+    private async Task EnumerateDirectoriesAsync(Channel<string> channel, IEnumerable<string> enumerable)
     {
-        await sem.WaitAsync();
-        try
+        var enumerator = enumerable.GetEnumerator();
+        while (enumerator.MoveNext())
         {
-            var fileResult = await ProcessFileAsync(filePath);
-            await printChannel.Writer.WriteAsync(fileResult);
+            await channel.Writer.WriteAsync(enumerator.Current);
         }
-        finally
+        channel.Writer.Complete();
+    }
+
+    private async Task RunSearchAsync(Channel<string> channel)
+    {
+        await foreach (string filePath in channel.Reader.ReadAllAsync())
         {
-            sem.Release();
+            FileResult fileResult = await ProcessFileAsync(filePath);
+            await printChannel.Writer.WriteAsync(fileResult);
         }
     }
 
