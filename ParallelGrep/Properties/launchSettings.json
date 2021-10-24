@@ -2,7 +2,7 @@
   "profiles": {
     "ParallelGrep": {
       "commandName": "Project",
-      "commandLineArgs": "-i -c 24 \"Requeststat\" \"C:\\share\\log_day\""
+      "commandLineArgs": " -c 24 \"Requeststat\" \"C:\\share\\log_day\""
     }
   }
 }

@@ -35,7 +35,7 @@ public class FileSearchWorker
         return await ProcessFileAsync(stream);
     }
 
-    public async Task<FileResult> ProcessFileAsync(FileStream stream)
+    public async ValueTask<FileResult> ProcessFileAsync(FileStream stream)
     {
         var reader = PipeReader.Create(stream);
 
@@ -72,11 +72,14 @@ public class FileSearchWorker
                 if (matches == null)
                     matches = new PooledList<Match>();
 
+                var owner = MemoryPool<byte>.Shared.Rent(line.Length);
+                line.CopyTo(owner.Memory.Span);
+
                 matches.Add(new Match
                 {
                     LineNumber = lineCount,
                     Index = matchIndex,
-                    Line = searchParameters.Encoding.GetString(line)
+                    Owner = owner,
                 });
             }
         }

@@ -1,4 +1,5 @@
 ﻿using System.Buffers;
+using System.Text;
 using System.Threading.Channels;
 
 namespace ParallelGrep.Core;
@@ -14,29 +15,36 @@ public class MatchPrinter
 
     public async Task StartAsync(string pattern, CancellationToken token = default)
     {
+        var stream = Console.OpenStandardOutput();
+        var dotsBytes = Encoding.UTF8.GetBytes(": ");
+
         await foreach (var file in channel.Reader.ReadAllAsync(token))
         {
             if (file.Matches == null)
                 continue;
 
             Console.ForegroundColor = ConsoleColor.DarkYellow;
-            Console.WriteLine($"File (total matches: {file.Matches.Count}): {file.Path}");
+            await stream.WriteAsync(Encoding.UTF8.GetBytes($"File (total matches: {file.Matches.Count}): {file.Path}\n"));
+
+            Console.WriteLine();
             foreach (var match in file.Matches)
             {
                 Console.ForegroundColor = ConsoleColor.DarkCyan;
-                Console.Write(match.LineNumber);
-                Console.Write(": ");
+                await stream.WriteAsync(Encoding.UTF8.GetBytes(match.LineNumber.ToString()));
+                await stream.WriteAsync(dotsBytes);
 
                 Console.ForegroundColor = ConsoleColor.Gray;
-                Console.Write(match.Line[..match.Index]);
+                await stream.WriteAsync(match.Owner.Memory[..match.Index]);
 
                 Console.ForegroundColor = ConsoleColor.DarkRed;
-                Console.Write(match.Line[match.Index..(match.Index + pattern.Length)]);
+                await stream.WriteAsync(match.Owner.Memory[match.Index..(match.Index + pattern.Length)]);
 
                 Console.ForegroundColor = ConsoleColor.Gray;
-                Console.WriteLine(match.Line[(match.Index + pattern.Length)..match.Line.Length]);
-            }
+                await stream.WriteAsync(match.Owner.Memory[(match.Index + pattern.Length)..match.Owner.Memory.Length]);
+                await stream.WriteAsync(new byte[] { (byte)'\n'});
 
+                match.Owner.Dispose();
+            }
             file.Matches.Dispose();
         }
     }

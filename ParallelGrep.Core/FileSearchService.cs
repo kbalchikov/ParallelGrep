@@ -1,11 +1,12 @@
 ﻿using Collections.Pooled;
+using System.Buffers;
 using System.Diagnostics;
 using System.IO.Enumeration;
 using System.Threading.Channels;
 
 namespace ParallelGrep.Core;
 
-public readonly record struct Match(int LineNumber, int Index, string Line);
+public readonly record struct Match(int LineNumber, int Index, IMemoryOwner<byte> Owner);
 public record class FileResult(PooledList<Match>? Matches, string? Path);
 
 public class FileSearchService

@@ -9,8 +9,16 @@ public static class Program
 {
     public static async Task Main(string[] args)
     {
-        await Parser.Default.ParseArguments<CommandLineOptions>(args)
-            .WithParsedAsync(RunSearchAsync);
+        try
+        {
+            await Parser.Default.ParseArguments<CommandLineOptions>(args)
+                .WithParsedAsync(RunSearchAsync);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+            Console.WriteLine(ex.StackTrace);
+        }
     }
 
     private static async Task<int> RunSearchAsync(CommandLineOptions args)
