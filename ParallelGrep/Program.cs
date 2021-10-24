@@ -1,5 +1,6 @@
 ﻿using CommandLine;
 using ParallelGrep.Core;
+using System.Text;
 using System.Threading.Channels;
 
 namespace ParallelGrep;
@@ -24,12 +25,8 @@ public static class Program
         var printChannel = Channel.CreateUnbounded<FileResult>(new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
         var matchPrinter = new MatchPrinter(printChannel);
 
-        var searchService = new FileSearchService(
-            printChannel,
-            pattern,
-            args.IgnoreCase,
-            concLevel);
-
+        var searchParameters = new SearchParameters(Encoding.UTF8, pattern, concLevel, args.IgnoreCase);
+        var searchService = new FileSearchService(printChannel, searchParameters);
         var printTask = matchPrinter.StartAsync(pattern);
 
         if (File.Exists(path))
