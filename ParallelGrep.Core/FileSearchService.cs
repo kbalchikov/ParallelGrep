@@ -1,10 +1,12 @@
-﻿using System.Diagnostics;
+﻿using Collections.Pooled;
+using System.Diagnostics;
+using System.IO.Enumeration;
 using System.Threading.Channels;
 
 namespace ParallelGrep.Core;
 
 public readonly record struct Match(int LineNumber, int Index, string Line);
-public record class FileResult(List<Match> Matches, string? Path);
+public record class FileResult(PooledList<Match>? Matches, string? Path);
 
 public class FileSearchService
 {
@@ -19,7 +21,14 @@ public class FileSearchService
 
     public async Task<TimeSpan> SearchAsync(string directory, string filePattern)
     {
-        var directoryChannel = Channel.CreateUnbounded<string>(new UnboundedChannelOptions { SingleWriter = true, SingleReader = false });
+        var fileChannel = Channel.CreateBounded<FileStream>(
+            new BoundedChannelOptions(searchParameters.ConcurrencyLevel)
+            {
+                FullMode = BoundedChannelFullMode.Wait,
+                SingleReader = true,
+                SingleWriter = false
+            });
+
         var sw = Stopwatch.StartNew();
 
         var tasks = new List<Task>(searchParameters.ConcurrencyLevel + 1);
@@ -27,12 +36,9 @@ public class FileSearchService
         for (int index = 0; index < searchParameters.ConcurrencyLevel; index++)
         {
             var worker = new FileSearchWorker(searchParameters, printChannel);
-            tasks.Add(worker.RunSearchAsync(directoryChannel));
+            tasks.Add(worker.RunSearchAsync(fileChannel));
         }
-
-        tasks.Add(EnumerateDirectoriesAsync(
-            directoryChannel,
-            Directory.EnumerateFiles(directory, filePattern, SearchOption.AllDirectories)));
+        tasks.Add(EnumerateFilesAsync(fileChannel, directory, filePattern));
 
         await Task.WhenAll(tasks);
         printChannel.Writer.Complete();
@@ -51,12 +57,30 @@ public class FileSearchService
         return sw.Elapsed;
     }
 
-    private async Task EnumerateDirectoriesAsync(Channel<string> channel, IEnumerable<string> enumerable)
+    private async Task EnumerateFilesAsync(Channel<FileStream> channel, string directory, string pattern)
     {
-        var enumerator = enumerable.GetEnumerator();
-        while (enumerator.MoveNext())
+        var files = new FileSystemEnumerable<FileStream?>(directory,
+            (ref FileSystemEntry entry) =>
+            {
+                if (entry.IsDirectory)
+                    return null;
+
+                string filePath = Path.Join(
+                    entry.Directory,
+                    entry.FileName);
+
+                return new FileStream(filePath,
+                    FileMode.Open, FileAccess.Read, FileShare.Read, 4096,
+                    FileOptions.Asynchronous | FileOptions.SequentialScan);
+
+            }, new EnumerationOptions { RecurseSubdirectories = true });
+
+        foreach (FileStream? file in files)
         {
-            await channel.Writer.WriteAsync(enumerator.Current);
+            if (file == null)
+                continue;
+
+            await channel.Writer.WriteAsync(file);
         }
         channel.Writer.Complete();
     }

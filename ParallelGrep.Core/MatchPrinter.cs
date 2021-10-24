@@ -1,4 +1,5 @@
-﻿using System.Threading.Channels;
+﻿using System.Buffers;
+using System.Threading.Channels;
 
 namespace ParallelGrep.Core;
 
@@ -15,7 +16,7 @@ public class MatchPrinter
     {
         await foreach (var file in channel.Reader.ReadAllAsync(token))
         {
-            if (file.Matches.Count == 0)
+            if (file.Matches == null)
                 continue;
 
             Console.ForegroundColor = ConsoleColor.DarkYellow;
@@ -35,6 +36,8 @@ public class MatchPrinter
                 Console.ForegroundColor = ConsoleColor.Gray;
                 Console.WriteLine(match.Line[(match.Index + pattern.Length)..match.Line.Length]);
             }
+
+            file.Matches.Dispose();
         }
     }
 }

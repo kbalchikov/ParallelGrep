@@ -1,6 +1,6 @@
-﻿using System.Buffers;
+﻿using Collections.Pooled;
+using System.Buffers;
 using System.IO.Pipelines;
-using System.Text;
 using System.Threading.Channels;
 
 namespace ParallelGrep.Core;
@@ -16,11 +16,12 @@ public class FileSearchWorker
         this.printChannel = printChannel;
     }
 
-    public async Task RunSearchAsync(Channel<string> channel)
+    public async Task RunSearchAsync(Channel<FileStream> channel)
     {
-        await foreach (string filePath in channel.Reader.ReadAllAsync())
+        await foreach (FileStream stream in channel.Reader.ReadAllAsync())
         {
-            FileResult fileResult = await ProcessFileAsync(filePath);
+            FileResult fileResult = await ProcessFileAsync(stream);
+            await stream.DisposeAsync();
             await printChannel.Writer.WriteAsync(fileResult);
         }
     }
@@ -31,17 +32,22 @@ public class FileSearchWorker
             FileMode.Open, FileAccess.Read, FileShare.Read, 4096,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
 
+        return await ProcessFileAsync(stream);
+    }
+
+    public async Task<FileResult> ProcessFileAsync(FileStream stream)
+    {
         var reader = PipeReader.Create(stream);
 
-        var matches = new List<Match>();
         int lineCount = 0;
+        PooledList<Match>? matches = null;
 
         while (true)
         {
             var readResult = await reader.ReadAsync();
             var buffer = readResult.Buffer;
 
-            matches.AddRange(FindLinesInBuffer(ref buffer, ref lineCount));
+            FindLinesInBuffer(ref matches, ref buffer, ref lineCount);
             reader.AdvanceTo(buffer.Start, buffer.End);
 
             if (readResult.IsCompleted)
@@ -49,12 +55,11 @@ public class FileSearchWorker
         }
 
         await reader.CompleteAsync();
-        return new FileResult(matches, filePath);
+        return new FileResult(matches, stream.Name);
     }
 
-    private List<Match> FindLinesInBuffer(ref ReadOnlySequence<byte> buffer, ref int lineCount)
+    private void FindLinesInBuffer(ref PooledList<Match>? matches, ref ReadOnlySequence<byte> buffer, ref int lineCount)
     {
-        var matchingLines = new List<Match>();
         var reader = new SequenceReader<byte>(buffer);
 
         while (reader.TryReadTo(out ReadOnlySpan<byte> line, (byte)'\n'))
@@ -64,7 +69,10 @@ public class FileSearchWorker
             int matchIndex = ProcessLine(line);
             if (matchIndex >= 0)
             {
-                matchingLines.Add(new Match
+                if (matches == null)
+                    matches = new PooledList<Match>();
+
+                matches.Add(new Match
                 {
                     LineNumber = lineCount,
                     Index = matchIndex,
@@ -73,7 +81,6 @@ public class FileSearchWorker
             }
         }
         buffer = buffer.Slice(reader.Position);
-        return matchingLines;
     }
 
     private int ProcessLine(in ReadOnlySpan<byte> source)
