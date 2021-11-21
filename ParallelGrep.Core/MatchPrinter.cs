@@ -15,6 +15,7 @@ public class MatchPrinter
 
     public async Task StartAsync(string pattern, CancellationToken token = default)
     {
+        Console.OutputEncoding = Encoding.UTF8;
         var stream = Console.OpenStandardOutput();
         var dotsBytes = Encoding.UTF8.GetBytes(": ");
 
