@@ -99,7 +99,11 @@ public class FileSearchWorker
             }
             else
             {
-                return searchParameters.Encoding.GetString(source).IndexOf(searchParameters.Pattern, StringComparison.OrdinalIgnoreCase);
+                var bytes = ArrayPool<char>.Shared.Rent(source.Length);
+                var span = new ReadOnlySpan<char>(bytes);
+                int index = span.IndexOf(searchParameters.Pattern.AsSpan(), StringComparison.OrdinalIgnoreCase);
+                ArrayPool<char>.Shared.Return(bytes);
+                return index;
             }
         }
         else
